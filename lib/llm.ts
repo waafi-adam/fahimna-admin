@@ -23,7 +23,7 @@ const AMR_KEYS: ImperativeKey[] = ['2ms', '2md', '2mp', '2fs', '2fd', '2fp'];
 // Default model when neither the request nor OPENROUTER_MODEL env var sets one.
 // Any OpenRouter model slug works — see https://openrouter.ai/models. The UI
 // lets you override this per-request so you can compare models.
-export const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet';
+export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -63,19 +63,8 @@ Rules:
 - If a particular cell or table genuinely does not exist for this verb, use null (for a cell) or omit the optional table entirely. Do not invent forms.
 - Prefer spellings consistent with "attestedForms" when they apply.
 - If "comment" is present, prioritise the fix it describes.
+- ALWAYS return the COMPLETE corrected paradigm: every cell of "past" and "present" filled (all 14 each), and every other table that exists for this verb fully populated. NEVER return empty tables ({}) or omit cells that exist — even cells that are already correct must be included with their correct value, so the reviewer sees the full paradigm.
 - Output JSON only — no markdown, no commentary outside the JSON.`;
-
-// Loose JSON schema passed to OpenRouter. We keep strict:false for portability
-// across models (strict mode requires every property be required, which fights
-// the partial/optional tables) and instead validate/sanitize server-side.
-const RESPONSE_SCHEMA = {
-  type: 'object',
-  properties: {
-    tashreef: { type: 'object' },
-    notes: { type: 'string' },
-  },
-  required: ['tashreef'],
-} as const;
 
 export type TashreefSuggestion = {
   suggestion: Tashreef;
@@ -125,14 +114,16 @@ export async function suggestTashreef(opts: {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: JSON.stringify(userPayload) },
       ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'tashreef_suggestion',
-          strict: false,
-          schema: RESPONSE_SCHEMA,
-        },
-      },
+      // JSON object mode forces valid JSON without constraining the shape. We
+      // deliberately do NOT use json_schema here: with a loose schema, some
+      // models (incl. Claude via OpenRouter) "satisfy" it by returning the
+      // minimal empty structure ({past:{},present:{}}) instead of doing the
+      // work. The strong system prompt + extractJson + sanitizeTashreef handle
+      // shape/robustness instead.
+      response_format: { type: 'json_object' },
+      // Enough room for 5 fully-diacritised 14-cell tables + participles.
+      max_tokens: 4096,
+      temperature: 0,
     }),
   });
 

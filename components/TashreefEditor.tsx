@@ -23,15 +23,15 @@ const AMR_KEYS: ImperativeKey[] = ['2ms', '2md', '2mp', '2fs', '2fd', '2fp'];
 
 // Default model shown in the picker. Mirrors DEFAULT_MODEL in lib/llm.ts; the
 // server falls back to OPENROUTER_MODEL / its own default if this is blank.
-const DEFAULT_MODEL = 'anthropic/claude-3.5-sonnet';
+const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
 
 // A few starting points for the model picker — these are only hints in a
 // datalist; type any slug from https://openrouter.ai/models.
 const MODEL_HINTS = [
-  'anthropic/claude-3.5-sonnet',
-  'anthropic/claude-3.7-sonnet',
+  'anthropic/claude-sonnet-4.6',
+  'anthropic/claude-opus-4.8',
+  'anthropic/claude-sonnet-latest',
   'openai/gpt-4o',
-  'openai/o1',
   'google/gemini-2.0-flash-001',
 ];
 
@@ -198,42 +198,52 @@ export default function TashreefEditor({
         }}
       >
         <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
-          <strong>✨ AI conjugation suggestions</strong>
+          <strong>✨ AI conjugation check</strong>
           <span className="muted" style={{ fontSize: 12 }}>via OpenRouter</span>
         </div>
 
-        <label className="col" style={{ gap: 4 }}>
-          <span className="muted" style={{ fontSize: 12 }}>
-            Comment (optional) — describe what to fix
-          </span>
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            rows={2}
-            placeholder="e.g. the passive present is wrong; this is a form II verb"
-            dir="auto"
-          />
-        </label>
+        {/* Primary action — one click, no input needed. The model reads the
+            current paradigm and proposes fixes for whatever looks wrong. */}
+        <button onClick={runSuggest} disabled={suggesting} style={{ width: '100%' }}>
+          {suggesting ? 'Thinking…' : suggestion ? '🔄 Re-check conjugation' : '🪄 Auto-fix conjugation'}
+        </button>
+        <span className="muted" style={{ fontSize: 12 }}>
+          Reads the current forms and suggests corrections — review each before it’s applied. Nothing is saved until you Save.
+        </span>
 
-        <div className="row" style={{ alignItems: 'flex-end', gap: 10 }}>
-          <label className="col" style={{ gap: 4, flex: '1 1 260px', minWidth: 0 }}>
-            <span className="muted" style={{ fontSize: 12 }}>Model</span>
-            <input
-              list="or-models"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="openrouter model slug"
-            />
-            <datalist id="or-models">
-              {MODEL_HINTS.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          </label>
-          <button onClick={runSuggest} disabled={suggesting}>
-            {suggesting ? 'Thinking…' : suggestion ? 'Regenerate' : 'Suggest corrections'}
-          </button>
-        </div>
+        {/* Optional refinements — collapsed so the one-click flow stays front
+            and center. Open only if you want to steer the model or change it. */}
+        <details>
+          <summary className="muted" style={{ fontSize: 13, cursor: 'pointer' }}>
+            Add a note or change model (optional)
+          </summary>
+          <div className="col" style={{ gap: 10, marginTop: 10 }}>
+            <label className="col" style={{ gap: 4 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Note — describe what to focus on</span>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                rows={2}
+                placeholder="e.g. the passive present is wrong; this is a form II verb"
+                dir="auto"
+              />
+            </label>
+            <label className="col" style={{ gap: 4, minWidth: 0 }}>
+              <span className="muted" style={{ fontSize: 12 }}>Model</span>
+              <input
+                list="or-models"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="openrouter model slug"
+              />
+              <datalist id="or-models">
+                {MODEL_HINTS.map((m) => (
+                  <option key={m} value={m} />
+                ))}
+              </datalist>
+            </label>
+          </div>
+        </details>
 
         {suggestError && (
           <span style={{ color: 'var(--danger)' }}>{suggestError}</span>
@@ -478,8 +488,13 @@ function OptionalBlock({
   );
 }
 
-// The flex grid of labeled arabic cells. Cells wrap on mobile via .row — no
-// fixed-width columns.
+// Person-row labels by the leading digit of a conjugation key.
+const PERSON_LABEL: Record<string, string> = { '3': '3rd', '2': '2nd', '1': '1st' };
+
+// Grid of labeled arabic cells. The container is forced LTR so the cells always
+// read left-to-right (3ms → 3md → … ) regardless of the RTL Arabic inside each
+// input. Keys are grouped by person onto their own line (3rd, then 2nd, then
+// 1st) so the paradigm reads top-to-bottom, left-to-right. Cells wrap on mobile.
 function Grid({
   keys,
   table,
@@ -489,18 +504,34 @@ function Grid({
   table: ConjugationTable | ImperativeTable;
   onCell: (key: string, raw: string) => void;
 }) {
+  // Group keys by their leading person digit, preserving order.
+  const groups: { person: string; keys: string[] }[] = [];
+  for (const k of keys) {
+    const person = k[0];
+    let g = groups.find((x) => x.person === person);
+    if (!g) { g = { person, keys: [] }; groups.push(g); }
+    g.keys.push(k);
+  }
+
   return (
-    <div className="row">
-      {keys.map((k) => (
-        <label key={k} className="col" style={{ gap: 4, flex: '1 1 110px', minWidth: 0 }}>
-          <span className="muted" style={{ fontSize: 12 }}>{k}</span>
-          <input
-            className="arabic"
-            dir="rtl"
-            value={(table as Record<string, string | null>)[k] ?? ''}
-            onChange={(e) => onCell(k, e.target.value)}
-          />
-        </label>
+    <div className="col" style={{ direction: 'ltr', gap: 8 }}>
+      {groups.map((g) => (
+        <div key={g.person} className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+          <span className="muted" style={{ width: 30, fontSize: 12, flexShrink: 0, paddingBottom: 8 }}>
+            {PERSON_LABEL[g.person] ?? g.person}
+          </span>
+          {g.keys.map((k) => (
+            <label key={k} className="col" style={{ gap: 4, flex: '1 1 88px', minWidth: 0 }}>
+              <span className="muted" style={{ fontSize: 11 }}>{k}</span>
+              <input
+                className="arabic"
+                dir="rtl"
+                value={(table as Record<string, string | null>)[k] ?? ''}
+                onChange={(e) => onCell(k, e.target.value)}
+              />
+            </label>
+          ))}
+        </div>
       ))}
     </div>
   );
