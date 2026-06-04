@@ -489,12 +489,36 @@ function OptionalBlock({
 }
 
 // Person-row labels by the leading digit of a conjugation key.
-const PERSON_LABEL: Record<string, string> = { '3': '3rd', '2': '2nd', '1': '1st' };
+const PERSON_LABEL: Record<string, string> = {
+  '3': 'الغائب · 3rd',
+  '2': 'المخاطب · 2nd',
+  '1': 'المتكلم · 1st',
+};
 
-// Grid of labeled arabic cells. The container is forced LTR so the cells always
-// read left-to-right (3ms → 3md → … ) regardless of the RTL Arabic inside each
-// input. Keys are grouped by person onto their own line (3rd, then 2nd, then
-// 1st) so the paradigm reads top-to-bottom, left-to-right. Cells wrap on mobile.
+// Human-readable pronoun (الضمير) + short English gloss per cell key, so the
+// grid reads with real pronouns (هو / هي / …) instead of codes like 3ms.
+const PRONOUN: Record<string, { ar: string; en: string }> = {
+  '3ms': { ar: 'هُوَ', en: 'he' },
+  '3md': { ar: 'هُمَا', en: 'they 2 (m)' },
+  '3mp': { ar: 'هُمْ', en: 'they (m)' },
+  '3fs': { ar: 'هِيَ', en: 'she' },
+  '3fd': { ar: 'هُمَا', en: 'they 2 (f)' },
+  '3fp': { ar: 'هُنَّ', en: 'they (f)' },
+  '2ms': { ar: 'أَنْتَ', en: 'you (m)' },
+  '2md': { ar: 'أَنْتُمَا', en: 'you 2 (m)' },
+  '2mp': { ar: 'أَنْتُمْ', en: 'you (m.pl)' },
+  '2fs': { ar: 'أَنْتِ', en: 'you (f)' },
+  '2fd': { ar: 'أَنْتُمَا', en: 'you 2 (f)' },
+  '2fp': { ar: 'أَنْتُنَّ', en: 'you (f.pl)' },
+  '1s': { ar: 'أَنَا', en: 'I' },
+  '1p': { ar: 'نَحْنُ', en: 'we' },
+};
+
+// Grid of labeled arabic cells. RTL so it reads the natural Arabic way:
+// singular on the RIGHT, then dual, then plural to the left. Keys are grouped by
+// person onto their own line (3rd الغائب, then 2nd المخاطب, then 1st المتكلم).
+// Each cell is labeled with its actual pronoun (هو، هي، …) + a short English
+// gloss instead of codes. Cells wrap on mobile.
 function Grid({
   keys,
   table,
@@ -514,23 +538,27 @@ function Grid({
   }
 
   return (
-    <div className="col" style={{ direction: 'ltr', gap: 8 }}>
+    <div className="col" style={{ direction: 'rtl', gap: 10 }}>
       {groups.map((g) => (
-        <div key={g.person} className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-          <span className="muted" style={{ width: 30, fontSize: 12, flexShrink: 0, paddingBottom: 8 }}>
-            {PERSON_LABEL[g.person] ?? g.person}
-          </span>
-          {g.keys.map((k) => (
-            <label key={k} className="col" style={{ gap: 4, flex: '1 1 88px', minWidth: 0 }}>
-              <span className="muted" style={{ fontSize: 11 }}>{k}</span>
-              <input
-                className="arabic"
-                dir="rtl"
-                value={(table as Record<string, string | null>)[k] ?? ''}
-                onChange={(e) => onCell(k, e.target.value)}
-              />
-            </label>
-          ))}
+        <div key={g.person} className="col" style={{ gap: 4 }}>
+          <span className="muted" style={{ fontSize: 11 }}>{PERSON_LABEL[g.person] ?? g.person}</span>
+          <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+            {g.keys.map((k) => {
+              const p = PRONOUN[k];
+              return (
+                <label key={k} className="col" style={{ gap: 2, flex: '1 1 96px', minWidth: 0 }}>
+                  <span style={{ fontSize: 13 }} className="arabic">{p?.ar ?? k}</span>
+                  <span className="muted" style={{ fontSize: 10, direction: 'ltr', textAlign: 'right' }}>{p?.en ?? ''}</span>
+                  <input
+                    className="arabic"
+                    dir="rtl"
+                    value={(table as Record<string, string | null>)[k] ?? ''}
+                    onChange={(e) => onCell(k, e.target.value)}
+                  />
+                </label>
+              );
+            })}
+          </div>
         </div>
       ))}
     </div>
